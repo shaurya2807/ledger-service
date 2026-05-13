@@ -47,25 +47,22 @@ func (r *AccountRepository) GetByID(ctx context.Context, id string) (*model.Acco
 	return &a, nil
 }
 
-func (r *AccountRepository) GetBalance(ctx context.Context, accountID string) (*model.BalanceResponse, error) {
-	var resp model.BalanceResponse
-	err := r.db.QueryRow(ctx,
+// GetBalance returns the computed balance and entry count for an account.
+// It queries entries directly; callers must verify the account exists beforehand.
+func (r *AccountRepository) GetBalance(ctx context.Context, accountID string) (balance string, entryCount int64, err error) {
+	err = r.db.QueryRow(ctx,
 		`SELECT
-			a.id,
-			a.currency,
-			COALESCE(SUM(CASE WHEN e.direction = 'credit' THEN e.amount ELSE -e.amount END), 0)::TEXT,
-			COUNT(e.id)
-		 FROM accounts a
-		 LEFT JOIN entries e ON e.account_id = a.id
-		 WHERE a.id = $1
-		 GROUP BY a.id, a.currency`,
+			COUNT(*) AS entry_count,
+			COALESCE(
+				SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END),
+				0
+			)::TEXT AS balance
+		 FROM entries
+		 WHERE account_id = $1`,
 		accountID,
-	).Scan(&resp.AccountID, &resp.Currency, &resp.Balance, &resp.EntryCount)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+	).Scan(&entryCount, &balance)
 	if err != nil {
-		return nil, fmt.Errorf("get balance: %w", err)
+		return "", 0, fmt.Errorf("get balance: %w", err)
 	}
-	return &resp, nil
+	return balance, entryCount, nil
 }

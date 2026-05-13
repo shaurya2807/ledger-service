@@ -24,5 +24,18 @@ func (s *AccountService) GetAccount(ctx context.Context, id string) (*model.Acco
 }
 
 func (s *AccountService) GetBalance(ctx context.Context, accountID string) (*model.BalanceResponse, error) {
-	return s.repo.GetBalance(ctx, accountID)
+	account, err := s.repo.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	balance, entryCount, err := s.repo.GetBalance(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+	return &model.BalanceResponse{
+		AccountID:  accountID,
+		Currency:   account.Currency,
+		Balance:    balance,
+		EntryCount: entryCount,
+	}, nil
 }
