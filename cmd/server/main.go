@@ -44,7 +44,7 @@ func main() {
 	accountSvc := service.NewAccountService(accountRepo)
 	txSvc := service.NewTransactionService(txRepo, accountRepo)
 
-	router := handler.NewRouter(accountSvc, txSvc, log)
+	router := handler.NewRouter(accountSvc, txSvc, log, cfg.AppEnv)
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.ServerPort,

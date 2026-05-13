@@ -12,6 +12,7 @@ func NewRouter(
 	accountSvc *service.AccountService,
 	txSvc *service.TransactionService,
 	logger *zap.Logger,
+	appEnv string,
 ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -25,6 +26,10 @@ func NewRouter(
 		v1.POST("/accounts", accounts.CreateAccount)
 		v1.GET("/accounts/:id", accounts.GetAccount)
 		v1.GET("/accounts/:id/balance", accounts.GetBalance)
+
+		if appEnv == "development" {
+			v1.POST("/accounts/:id/seed", accounts.Seed)
+		}
 
 		txs := NewTransactionHandler(txSvc, logger)
 		v1.POST("/transfers", txs.Transfer)

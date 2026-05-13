@@ -5,6 +5,11 @@ type CreateAccountRequest struct {
 	Currency string `json:"currency"  binding:"required,len=3"`
 }
 
+type SeedRequest struct {
+	Amount   float64 `json:"amount"   binding:"required,gt=0"`
+	Currency string  `json:"currency" binding:"required,len=3"`
+}
+
 type TransferRequest struct {
 	FromAccountID  string  `json:"from_account_id"  binding:"required,uuid"`
 	ToAccountID    string  `json:"to_account_id"    binding:"required,uuid"`

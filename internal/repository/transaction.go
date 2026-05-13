@@ -43,34 +43,61 @@ func (r *TransactionRepository) Transfer(ctx context.Context, req *model.Transfe
 	}
 	defer tx.Rollback(ctx) //nolint:errcheck
 
+	// Lock all existing entry rows for from_account so that concurrent transfers
+	// against the same account queue behind this transaction rather than racing
+	// the balance check below.
+	if _, err = tx.Exec(ctx,
+		`SELECT id FROM entries WHERE account_id = $1 FOR UPDATE`,
+		req.FromAccountID,
+	); err != nil {
+		return nil, fmt.Errorf("lock entries: %w", err)
+	}
+
+	// Compute current balance from the locked snapshot.
+	var balance float64
+	if err = tx.QueryRow(ctx,
+		`SELECT COALESCE(
+			SUM(CASE WHEN direction = 'credit' THEN amount ELSE -amount END),
+			0
+		)::FLOAT8
+		 FROM entries WHERE account_id = $1`,
+		req.FromAccountID,
+	).Scan(&balance); err != nil {
+		return nil, fmt.Errorf("compute balance: %w", err)
+	}
+
+	if balance < req.Amount {
+		return nil, ErrInsufficientFunds
+	}
+
+	// Insert the transaction record first to obtain its generated ID.
 	var t model.Transaction
-	err = tx.QueryRow(ctx,
+	if err = tx.QueryRow(ctx,
 		`INSERT INTO transactions (idempotency_key, from_account_id, to_account_id, amount, currency)
 		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING id, idempotency_key, from_account_id, to_account_id,
 		           amount::TEXT, currency, status, created_at`,
 		req.IdempotencyKey, req.FromAccountID, req.ToAccountID, req.Amount, req.Currency,
 	).Scan(&t.ID, &t.IdempotencyKey, &t.FromAccountID, &t.ToAccountID,
-		&t.Amount, &t.Currency, &t.Status, &t.CreatedAt)
-	if err != nil {
+		&t.Amount, &t.Currency, &t.Status, &t.CreatedAt); err != nil {
 		return nil, fmt.Errorf("insert transaction: %w", err)
 	}
 
-	_, err = tx.Exec(ctx,
+	// Debit from_account.
+	if _, err = tx.Exec(ctx,
 		`INSERT INTO entries (account_id, transaction_id, amount, direction)
 		 VALUES ($1, $2, $3, 'debit')`,
 		req.FromAccountID, t.ID, req.Amount,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("insert debit entry: %w", err)
 	}
 
-	_, err = tx.Exec(ctx,
+	// Credit to_account.
+	if _, err = tx.Exec(ctx,
 		`INSERT INTO entries (account_id, transaction_id, amount, direction)
 		 VALUES ($1, $2, $3, 'credit')`,
 		req.ToAccountID, t.ID, req.Amount,
-	)
-	if err != nil {
+	); err != nil {
 		return nil, fmt.Errorf("insert credit entry: %w", err)
 	}
 

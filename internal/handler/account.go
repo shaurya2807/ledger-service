@@ -89,6 +89,41 @@ func (h *AccountHandler) GetBalance(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
+func (h *AccountHandler) Seed(c *gin.Context) {
+	id := c.Param("id")
+	if !isValidUUID(id) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid account id: must be a UUID"})
+		return
+	}
+
+	var req model.SeedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	entry, err := h.svc.Seed(c.Request.Context(), id, &req)
+	if errors.Is(err, repository.ErrNotFound) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "account not found"})
+		return
+	}
+	if errors.Is(err, service.ErrCurrencyMismatch) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		h.logger.Error("seed failed", zap.String("account_id", id), zap.Error(err))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		return
+	}
+
+	h.logger.Info("account seeded",
+		zap.String("account_id", id),
+		zap.String("amount", entry.Amount),
+	)
+	c.JSON(http.StatusCreated, entry)
+}
+
 // isValidUUID checks the standard 8-4-4-4-12 hex UUID format.
 func isValidUUID(s string) bool {
 	if len(s) != 36 {

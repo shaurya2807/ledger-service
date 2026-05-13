@@ -47,6 +47,20 @@ func (r *AccountRepository) GetByID(ctx context.Context, id string) (*model.Acco
 	return &a, nil
 }
 
+func (r *AccountRepository) Seed(ctx context.Context, accountID string, req *model.SeedRequest) (*model.Entry, error) {
+	var e model.Entry
+	err := r.db.QueryRow(ctx,
+		`INSERT INTO entries (account_id, transaction_id, amount, direction)
+		 VALUES ($1, gen_random_uuid(), $2, 'credit')
+		 RETURNING id, account_id, transaction_id, amount::TEXT, direction, created_at`,
+		accountID, req.Amount,
+	).Scan(&e.ID, &e.AccountID, &e.TransactionID, &e.Amount, &e.Direction, &e.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("seed account: %w", err)
+	}
+	return &e, nil
+}
+
 // GetBalance returns the computed balance and entry count for an account.
 // It queries entries directly; callers must verify the account exists beforehand.
 func (r *AccountRepository) GetBalance(ctx context.Context, accountID string) (balance string, entryCount int64, err error) {
